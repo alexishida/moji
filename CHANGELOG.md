@@ -12,6 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Expanded Markdown editor commands for inline code, blockquotes, H1-H3 headings, and command-palette-triggered formatting.
 - Folder workspaces: open a folder, browse Markdown files from the sidebar, search across folder Markdown files, and open files into tabs on demand.
 - Persisted recent folders alongside recent files.
+- AUR `moji-bin` package recipe for installation with `yay -S moji-bin`.
 
 ## [0.1.4] - 2026-07-13
 
