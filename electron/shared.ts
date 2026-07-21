@@ -56,6 +56,12 @@ export type ImageDataResult =
   | { ok: true; dataUrl: string }
   | { ok: false; error?: string }
 
+/** Result of opening a local path from a Markdown preview link. */
+export type OpenLocalPathResult =
+  | { ok: true; type: 'file'; document: DocumentPayload }
+  | { ok: true; type: 'external'; path: string }
+  | { ok: false; error?: string }
+
 export type UpdateStatus =
   | 'unsupported'
   | 'idle'
@@ -109,6 +115,7 @@ export interface DiagramPngRequest {
 /** IPC channel names. */
 export const IPC = {
   openDialog: 'file:open-dialog',
+  openLocalPath: 'file:open-local-path',
   readPath: 'file:read-path',
   readImage: 'file:read-image',
   readSample: 'file:read-sample',

@@ -5,6 +5,7 @@ import {
   type DocumentPayload,
   type ExportRequest,
   type ImageDataResult,
+  type OpenLocalPathResult,
   type OpenManyResult,
   type OpenResult,
   type Settings,
@@ -17,6 +18,7 @@ const api = {
   setSettings: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke(IPC.setSettings, patch),
 
   openDialog: (): Promise<OpenManyResult> => ipcRenderer.invoke(IPC.openDialog),
+  openLocalPath: (filePath: string): Promise<OpenLocalPathResult> => ipcRenderer.invoke(IPC.openLocalPath, filePath),
   readPath: (filePath: string): Promise<OpenResult> => ipcRenderer.invoke(IPC.readPath, filePath),
   readImageAsDataUrl: (filePath: string): Promise<ImageDataResult> => ipcRenderer.invoke(IPC.readImage, filePath),
   readSample: (sampleName: string): Promise<OpenResult> => ipcRenderer.invoke(IPC.readSample, sampleName),

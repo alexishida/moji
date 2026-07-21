@@ -1,13 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, extname, isAbsolute, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   IPC,
   MARKDOWN_EXTENSIONS,
   SUPPORTED_LANGUAGES,
   type ImageDataResult,
   type Language,
+  type OpenLocalPathResult,
   type OpenManyResult,
   type OpenResult,
   type Settings,
@@ -45,6 +47,7 @@ app.setName('Moji')
 app.setPath('userData', join(app.getPath('appData'), SETTINGS_DIRECTORY))
 
 const IMAGE_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
+const EXTERNAL_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:'])
 const SAMPLE_FILES = new Set([
   'markdown-guide.en.md',
   'markdown-guide.pt-BR.md',
@@ -176,6 +179,57 @@ async function readDocument(filePath: unknown): Promise<OpenResult> {
   } catch (err) {
     return { ok: false, error: (err as Error).message }
   }
+}
+
+async function openLocalPath(filePath: unknown): Promise<OpenLocalPathResult> {
+  if (typeof filePath !== 'string' || !isAbsolute(filePath)) return { ok: false, error: 'unsupported' }
+
+  try {
+    const fileStat = await stat(filePath)
+    if (fileStat.isFile() && isMarkdown(filePath)) {
+      const result = await readDocument(filePath)
+      return result.ok
+        ? { ok: true, type: 'file', document: { path: result.path, content: result.content } }
+        : result
+    }
+
+    if (!fileStat.isFile() && !fileStat.isDirectory()) return { ok: false, error: 'unsupported' }
+
+    const error = await shell.openPath(filePath)
+    return error ? { ok: false, error } : { ok: true, type: 'external', path: filePath }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+function sendOpenLocalPathResult(result: OpenLocalPathResult): void {
+  if (!mainWindow || !result.ok || result.type !== 'file') return
+  mainWindow.webContents.send(IPC.openDocument, result.document)
+}
+
+async function openLocalFileUrl(fileUrl: string): Promise<void> {
+  try {
+    sendOpenLocalPathResult(await openLocalPath(fileURLToPath(fileUrl)))
+  } catch {
+    /* Ignore invalid file URLs blocked from navigation. */
+  }
+}
+
+function openExternalUrl(url: string): boolean {
+  try {
+    if (!EXTERNAL_URL_PROTOCOLS.has(new URL(url).protocol)) return false
+    void shell.openExternal(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isAppNavigationUrl(url: string): boolean {
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (devUrl) return url.startsWith(devUrl)
+  const rendererUrl = pathToFileURL(join(__dirname, '../renderer/index.html')).toString()
+  return url === rendererUrl || url.startsWith(`${rendererUrl}#`)
 }
 
 /** Single funnel for every open entry point (association, CLI, dialog, drop). */
@@ -313,17 +367,16 @@ function createWindow(): void {
     }
   })
 
-  // Open external links in the OS browser, never in-app.
+  // Open links outside Chromium navigation so document state never gets replaced.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http:') || url.startsWith('https:')) void shell.openExternal(url)
+    if (!openExternalUrl(url) && url.startsWith('file:')) void openLocalFileUrl(url)
     return { action: 'deny' }
   })
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const devUrl = process.env['ELECTRON_RENDERER_URL']
-    if ((devUrl && url.startsWith(devUrl)) || (!devUrl && url.startsWith('file://'))) return
+    if (isAppNavigationUrl(url)) return
     event.preventDefault()
-    if (url.startsWith('http:') || url.startsWith('https:')) void shell.openExternal(url)
+    if (!openExternalUrl(url) && url.startsWith('file:')) void openLocalFileUrl(url)
   })
 
   // Close guard: ask the renderer before closing when there are unsaved edits.
@@ -384,6 +437,8 @@ function registerIpc(): void {
         .map(({ path, content }) => ({ path, content }))
     }
   })
+
+  ipcMain.handle(IPC.openLocalPath, (_e, filePath: unknown): Promise<OpenLocalPathResult> => openLocalPath(filePath))
 
   ipcMain.handle(IPC.readPath, (_e, filePath: unknown): Promise<OpenResult> => readDocument(filePath))
 
